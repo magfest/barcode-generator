@@ -1,0 +1,17 @@
+---
+badge_types:
+  staff_badge:
+    range_start: 1
+    range_end: 999
+  supporter_badge:
+    range_start: 1000
+    range_end: 1999
+  guest_badge:
+    range_start: 2000
+    range_end: 2999
+  attendee_badge:
+    range_start: 3000
+    range_end: 5999
+  one_day_badge:
+    range_start: 6000
+    range_end: 7999
