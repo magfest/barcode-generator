@@ -1,19 +1,14 @@
 import yaml
 import base64
-import os
-import random
 import struct
-from ctypes import create_string_buffer
 import skip32
-import base58
+import code128
+
 
 class BarcodeNumberGenerator:
     def __init__(self, yaml_file):
         with open(yaml_file, 'r') as stream:
             self.badge_types = yaml.load(stream)
-            self.secret_key = bytes('JK65*&5Ba|','ascii') # must be 10 bytes
-            self.salt = 87
-            self.event_id = 255
 
     def generate_csv(self):
         badge_types = self.badge_types['badge_types']
@@ -30,18 +25,23 @@ class BarcodeNumberGenerator:
     def generate_barcode_nums(self, range_start, range_end):
         generate_lines = []
         for badge_num in range(range_start, range_end+1):
-            barcode_num = self.generate_barcode_from_badge_num(int(badge_num), event_id=self.event_id, salt=self.salt, key=self.secret_key)
+            barcode_num = BarcodeNumberGenerator.generate_barcode_from_badge_num(
+                badge_num=int(badge_num),
+                event_id=self.event_id,
+                salt=self.salt,
+                key=self.secret_key
+            )
 
-            line = "{badge_num},{barcode_num},{l}".format(
+            line = "{badge_num},{barcode_num}".format(
                 badge_num=badge_num,
                 barcode_num=barcode_num,
-                l=len(barcode_num)
             )
             generate_lines.append(line)
 
         return generate_lines
 
-    def generate_barcode_from_badge_num(self, badge_num, event_id, salt, key):
+    @staticmethod
+    def generate_barcode_from_badge_num(badge_num, event_id, salt, key):
         # packed data going to be encrypted is:
         # byte 1 - 8bit event ID, usually 1 char
         # byte 2,3,4 - 24bit badge number
@@ -59,27 +59,34 @@ class BarcodeNumberGenerator:
         if len(data_to_encrypt) != 4:
             raise Exception("data to encrypt should be 4 bytes")
 
-        if len(self.secret_key) != 10:
+        if len(key) != 10:
             raise Exception("key length should be exactly 10 bytes")
 
-        encrypted_string = encrypt(data_to_encrypt, key=self.secret_key)
-        #ds = bytes(encrypted_string, 'ascii')
-        #test = decrypt(ds, key=self.secret_key)
+        encrypted_string = encrypt(data_to_encrypt, key=key)
 
-        decrypted = self.get_badge_num_from_barcode(encrypted_string, salt, key)
-
+        # check to make sure it worked.
+        decrypted = BarcodeNumberGenerator.get_badge_num_from_barcode(encrypted_string, salt, key)
         if decrypted['badge_num'] != badge_num or decrypted['event_id'] != event_id:
             raise Exception("didn't encode correctly")
 
+        # check to make sure this barcode number is valid for Code 128 barcode
+        BarcodeNumberGenerator.verify_barcode_is_valid_code128(encrypted_string)
+
         return encrypted_string
 
-    def get_badge_num_from_barcode(self, barcode_num, salt, key):
-        decrypted = decrypt(bytes(barcode_num, 'ascii'), key=key)
+    @staticmethod
+    def verify_barcode_is_valid_code128(encrypted_string):
+        for c in encrypted_string:
+            if c not in code128._charset_b:
+                raise Exception("contains a char not valid in a code128 barcode")
+
+    @staticmethod
+    def get_badge_num_from_barcode(barcode_num, salt, key):
+        decrypted = decrypt(barcode_num, key=key)
 
         result = dict()
 
-        tmp = bytearray([decrypted[0]])
-        result['event_id'] = struct.unpack('>B', tmp)[0]
+        result['event_id'] = struct.unpack('>B', bytearray([decrypted[0]]))[0]
 
         badge_bytes = bytearray(bytes([0, decrypted[1], decrypted[2], decrypted[3]]))
         result['badge_num'] = struct.unpack('>I', badge_bytes)[0] - salt
@@ -90,42 +97,43 @@ class BarcodeNumberGenerator:
 def hexx(str):
     return ''.join(format(x, '02x') for x in str)
 
+
 def encrypt(value, key):
-    # buffer = bytearray(4)
-
-    # struct.pack_into(">I", buffer, 0, value)
-
     # skip32 generates 4 bytes output from 4 bytes input
     _encrypt = True
-    print("unencrypted = " + hexx(value))
     skip32.skip32(key, value, _encrypt)
 
     # raw bytes aren't suitable for a Code 128 barcode though,
     # so convert it to base58 encoding
     # which is just some alphanumeric and numeric chars and is
     # designed to be vaguely human.  this takes our 4 bytes and turns it into 11ish bytes
-    print("encrytped = " + hexx(value))
-    encrypted_value = base58.b58encode_check(value)
+    encrypted_value = base64.encodebytes(value).decode('ascii')
 
-    print("encrytped+encoded = " + encrypted_value)
+    # important note: because we are not an even multiple of 3 bytes, base64 needs to pad
+    # the resulting string with equals signs.  we can strip them out knowing that our length is 4 bytes
+    # IF YOU CHANGE THE LENGTH OF THE ENCRYPTED DATA FROM 4 BYTES, THIS WILL NO LONGER WORK.
+    encrypted_value = encrypted_value.replace('==\n', '')
+
     return encrypted_value
 
 
 def decrypt(value, key):
-
     # raw bytes aren't suitable for a Code 128 barcode though,
-    # so convert it to base58 encoding
+    # so convert it to base64 encoding
     # which is just some alphanumeric and numeric chars and is
-    # designed to be vaguely human.  this takes our 4 bytes and turns it into 11ish bytes
-    print("d: encrytped+encoded = " + str(value))
-    decoded = base58.b58decode_check(value)
+    # designed to be vaguely human.  this takes our 4 bytes and turns it into 6ish bytes
 
-    print("d: encrytped = " + hexx(decoded))
+    # important note: because we are not an even multiple of 3 bytes, base64 needs to pad
+    # the resulting string with equals signs.  we can strip them out knowing that our length is 4 bytes
+    # IF YOU CHANGE THE LENGTH OF THE ENCRYPTED DATA FROM 4 BYTES, THIS WILL NO LONGER WORK.
+    value += '==\n'
+
+    decoded = base64.decodebytes(value.encode('ascii'))
+
     # skip32 generates 4 bytes output from 4 bytes input
     _encrypt = False
     decrytped = bytearray(decoded)
     skip32.skip32(key, decrytped, _encrypt)
 
-    print("d: unencrypted = " + hexx(decrytped))
     return decrytped
 
