@@ -2,3 +2,4 @@ env/*
 .cache/*
 .vagrant/*
 .viminfo
+output.csv

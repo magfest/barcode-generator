@@ -11,4 +11,4 @@ if __name__ == '__main__':
     generator.salt = 87
     generator.event_id = 255
 
-    generator.generate_csv()
+    generator.generate_csv(filename='output.csv')

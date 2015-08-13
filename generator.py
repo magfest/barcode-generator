@@ -3,6 +3,7 @@ import base64
 import struct
 import skip32
 import code128
+import os
 
 
 class BarcodeNumberGenerator:
@@ -10,7 +11,7 @@ class BarcodeNumberGenerator:
         with open(yaml_file, 'r') as stream:
             self.badge_types = yaml.load(stream)
 
-    def generate_csv(self):
+    def generate_csv(self, filename):
         badge_types = self.badge_types['badge_types']
 
         lines = []
@@ -19,11 +20,16 @@ class BarcodeNumberGenerator:
             range_end = int(ranges['range_end'])
             lines = lines + self.generate_barcode_nums(range_start, range_end)
 
+        f = open(filename,'w')
+
         for line in lines:
-            print(line)
+            f.write(line + os.linesep)
+
+        f.close()
 
     def generate_barcode_nums(self, range_start, range_end):
-        generate_lines = []
+        generated_lines = []
+        seen_barcodes = []
         for badge_num in range(range_start, range_end+1):
             barcode_num = BarcodeNumberGenerator.generate_barcode_from_badge_num(
                 badge_num=int(badge_num),
@@ -36,9 +42,15 @@ class BarcodeNumberGenerator:
                 badge_num=badge_num,
                 barcode_num=barcode_num,
             )
-            generate_lines.append(line)
+            generated_lines.append(line)
 
-        return generate_lines
+            # ensure that we haven't seen this value before
+            if barcode_num in seen_barcodes:
+                raise ValueError('COLLISION: generated a badge# that\'s already been seen')
+            else:
+                seen_barcodes.append(barcode_num)
+
+        return generated_lines
 
     @staticmethod
     def generate_barcode_from_badge_num(badge_num, event_id, salt, key):
