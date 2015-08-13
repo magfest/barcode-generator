@@ -106,10 +106,6 @@ class BarcodeNumberGenerator:
         return result
 
 
-def hexx(str):
-    return ''.join(format(x, '02x') for x in str)
-
-
 def encrypt(value, key):
     # skip32 generates 4 bytes output from 4 bytes input
     _encrypt = True
