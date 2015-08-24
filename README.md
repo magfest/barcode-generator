@@ -1,3 +1,10 @@
+# OBSOLETE
+replaced by http://github.com/rams/barcode
+TODO: delete this repo
+
+
+
+
 # barcode-generator
 Proof of concept barcode sequence generator
 
